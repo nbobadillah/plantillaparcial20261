@@ -1,50 +1,43 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { RegisterDto } from './dto/register.dto';
-import { User } from './entities/user.entity';
+
+type RegisteredAuthUser = {
+  apiKey: string;
+  email: string;
+  name: string;
+};
 
 @Injectable()
 export class AuthService {
-  constructor(
-    @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
-  ) {}
+  private readonly registeredUsers = new Map<string, RegisteredAuthUser>();
+  private readonly apiKeys = new Set<string>();
 
-  async register(dto: RegisterDto) {
+  register(dto: RegisterDto) {
     const email = dto.email.trim().toLowerCase();
-    const existingUser = await this.usersRepository.findOne({
-      where: { email },
-    });
 
-    if (existingUser) {
+    if (this.registeredUsers.has(email)) {
       throw new BadRequestException(
         'Ya existe un usuario registrado con ese email.',
       );
     }
 
-    const user = this.usersRepository.create({
-      name: dto.name.trim(),
+    const authUser = {
+      apiKey: randomUUID(),
       email,
-      apiKey: uuidv4(),
-    });
-
-    const savedUser = await this.usersRepository.save(user);
+      name: dto.name.trim(),
+    };
+    this.registeredUsers.set(email, authUser);
+    this.apiKeys.add(authUser.apiKey);
 
     return {
-      apiKey: savedUser.apiKey,
-      name: savedUser.name,
-      email: savedUser.email,
+      apiKey: authUser.apiKey,
+      name: authUser.name,
+      email: authUser.email,
     };
   }
 
-  async isValidKey(apiKey: string): Promise<boolean> {
-    const user = await this.usersRepository.findOne({
-      where: { apiKey: apiKey.trim() },
-      select: ['id'],
-    });
-
-    return Boolean(user);
+  isValidKey(apiKey: string): boolean {
+    return this.apiKeys.has(apiKey.trim());
   }
 }
